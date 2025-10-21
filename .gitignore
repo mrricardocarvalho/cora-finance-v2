@@ -45,6 +45,7 @@ coverage.xml
 # Project-specific metadata folders
 .specify/
 .vscode/
+.github/
 
 # Allow explicitly tracked dotfiles
 !.gitignore
