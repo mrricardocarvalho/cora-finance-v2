@@ -42,5 +42,9 @@ coverage.xml
 # Keep the repo free of any local dot-folders
 .*.swp
 
+# Project-specific metadata folders
+.specify/
+.vscode/
+
 # Allow explicitly tracked dotfiles
 !.gitignore
