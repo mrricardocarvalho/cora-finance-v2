@@ -8,6 +8,20 @@
       "when": 1761331917287,
       "tag": "0000_plain_dreaming_celestial",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1761340498950,
+      "tag": "0001_free_skullbuster",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1761341390814,
+      "tag": "0002_rainy_sister_grimm",
+      "breakpoints": true
     }
   ]
 }

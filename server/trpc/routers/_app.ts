@@ -8,7 +8,12 @@
  */
 
 import { router } from '../init';
+import { accountsRouter } from './accounts';
+import { categoriesRouter } from './categories';
+import { currenciesRouter } from './currencies';
 import { healthRouter } from './health';
+import { payeesRouter } from './payees';
+import { settingsRouter } from './settings';
 
 /**
  * Application Router
@@ -18,8 +23,12 @@ import { healthRouter } from './health';
  */
 export const appRouter = router({
   health: healthRouter,
+  currencies: currenciesRouter,
+  settings: settingsRouter,
+  categories: categoriesRouter,
+  accounts: accountsRouter,
+  payees: payeesRouter,
   // Future routers will be added here:
-  // accounts: accountsRouter,
   // transactions: transactionsRouter,
   // budgets: budgetsRouter,
 });

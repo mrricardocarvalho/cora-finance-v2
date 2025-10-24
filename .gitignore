@@ -48,6 +48,8 @@ build/
 coverage/
 coverage.xml
 *.log
+*.tmp
+*.swp
 
 # Keep the repo free of any local dot-folders
 .*.swp
@@ -56,6 +58,12 @@ coverage.xml
 .specify/
 .vscode/
 .docs/
+
+# Database
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
 
 # Allow .github/workflows/ but ignore everything else in .github/
 .github/*
