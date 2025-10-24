@@ -20,6 +20,15 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Next.js build files
+.next/
+out/
+.swc/
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
 # Environment files
 .env
 .env.*
@@ -36,6 +45,7 @@ build/
 # Misc
 .pytest_cache/
 .mypy_cache/
+coverage/
 coverage.xml
 *.log
 
@@ -45,7 +55,11 @@ coverage.xml
 # Project-specific metadata folders
 .specify/
 .vscode/
-.github/
+.docs/
+
+# Allow .github/workflows/ but ignore everything else in .github/
+.github/*
+!.github/workflows/
 
 # Allow explicitly tracked dotfiles
 !.gitignore
