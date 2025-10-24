@@ -1,0 +1,9 @@
+node_modules
+.next
+dist
+build
+coverage
+.env*
+!.env.example
+specs/001-foundation/contracts/*.yaml
+*.yaml

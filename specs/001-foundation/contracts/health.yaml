@@ -1,0 +1,457 @@
+# tRPC Health Check Contract
+
+**Endpoint**: `health.check`  
+**Type**: Public Procedure (no authentication)  
+**Created**: 2025-10-24  
+**Purpose**: Verify server and database connectivity for Foundation Phase
+
+## Overview
+
+The health check endpoint demonstrates:
+- tRPC procedure definition
+- Input validation with Zod
+- Database query integration
+- Type-safe end-to-end communication
+- Example of Constitutional type safety principle
+
+---
+
+## Procedure Signature
+
+### Router Path
+`/server/trpc/routers/health.ts`
+
+### Procedure Name
+`check`
+
+### Access
+Public (no authentication required)
+
+---
+
+## Input Schema
+
+### Type Definition
+```typescript
+import { z } from 'zod';
+
+export const healthCheckInput = z.object({
+  includeDetails: z.boolean().optional().default(false),
+  message: z.string().optional(),
+}).optional();
+
+export type HealthCheckInput = z.infer<typeof healthCheckInput>;
+```
+
+### Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `includeDetails` | boolean | No | `false` | Whether to include detailed database information |
+| `message` | string | No | undefined | Optional message to include in response (for testing) |
+
+### Validation Rules
+- `includeDetails`: Must be a boolean if provided
+- `message`: Must be a string if provided, max length 500 characters (future: add max validation)
+
+### Examples
+
+**Minimal request** (no input):
+```typescript
+const result = await trpc.health.check.query();
+```
+
+**With details**:
+```typescript
+const result = await trpc.health.check.query({ 
+  includeDetails: true 
+});
+```
+
+**With message**:
+```typescript
+const result = await trpc.health.check.query({ 
+  message: 'Testing health endpoint' 
+});
+```
+
+---
+
+## Output Schema
+
+### Type Definition
+```typescript
+export const healthCheckOutput = z.object({
+  status: z.enum(['healthy', 'degraded', 'unhealthy']),
+  timestamp: z.date(),
+  server: z.object({
+    uptime: z.number(),           // Seconds since server start
+    nodeVersion: z.string(),      // Node.js version
+    environment: z.string(),      // 'development' | 'production' | 'test'
+  }),
+  database: z.object({
+    connected: z.boolean(),
+    latency: z.number().optional(),      // Query latency in ms (if includeDetails)
+    recordCount: z.number().optional(),  // Example table row count (if includeDetails)
+  }),
+  message: z.string().optional(),        // Echo back input message if provided
+});
+
+export type HealthCheckOutput = z.infer<typeof healthCheckOutput>;
+```
+
+### Response Fields
+
+| Field | Type | Always Present | Description |
+|-------|------|----------------|-------------|
+| `status` | enum | Yes | Overall health status |
+| `timestamp` | Date | Yes | ISO 8601 timestamp when check was performed |
+| `server.uptime` | number | Yes | Server uptime in seconds |
+| `server.nodeVersion` | string | Yes | Node.js runtime version |
+| `server.environment` | string | Yes | Current environment |
+| `database.connected` | boolean | Yes | Whether database connection succeeded |
+| `database.latency` | number | No | Query latency in ms (only if `includeDetails: true`) |
+| `database.recordCount` | number | No | Row count from example table (only if `includeDetails: true`) |
+| `message` | string | No | Echo back of input message (if provided) |
+
+### Status Values
+
+| Status | Condition | HTTP Equivalent |
+|--------|-----------|-----------------|
+| `healthy` | Database connected, all systems operational | 200 OK |
+| `degraded` | Database connected but slow (latency >100ms) | 200 OK (with warning) |
+| `unhealthy` | Database connection failed | 503 Service Unavailable |
+
+---
+
+## Example Responses
+
+### Success (Minimal)
+
+```json
+{
+  "status": "healthy",
+  "timestamp": "2025-10-24T14:30:00.000Z",
+  "server": {
+    "uptime": 3600,
+    "nodeVersion": "20.10.0",
+    "environment": "development"
+  },
+  "database": {
+    "connected": true
+  }
+}
+```
+
+### Success (With Details)
+
+```json
+{
+  "status": "healthy",
+  "timestamp": "2025-10-24T14:30:00.000Z",
+  "server": {
+    "uptime": 3600,
+    "nodeVersion": "20.10.0",
+    "environment": "development"
+  },
+  "database": {
+    "connected": true,
+    "latency": 12,
+    "recordCount": 5
+  }
+}
+```
+
+### Degraded (Slow Database)
+
+```json
+{
+  "status": "degraded",
+  "timestamp": "2025-10-24T14:30:00.000Z",
+  "server": {
+    "uptime": 3600,
+    "nodeVersion": "20.10.0",
+    "environment": "development"
+  },
+  "database": {
+    "connected": true,
+    "latency": 150
+  }
+}
+```
+
+### Unhealthy (Database Offline)
+
+```json
+{
+  "status": "unhealthy",
+  "timestamp": "2025-10-24T14:30:00.000Z",
+  "server": {
+    "uptime": 3600,
+    "nodeVersion": "20.10.0",
+    "environment": "development"
+  },
+  "database": {
+    "connected": false
+  }
+}
+```
+
+---
+
+## Implementation Reference
+
+### Server-Side Procedure
+
+```typescript
+// /server/trpc/routers/health.ts
+import { z } from 'zod';
+import { publicProcedure, router } from '../init';
+import { db } from '@/server/db';
+import { systemHealth } from '@/server/db/schema';
+import { count } from 'drizzle-orm';
+
+export const healthRouter = router({
+  check: publicProcedure
+    .input(z.object({
+      includeDetails: z.boolean().optional().default(false),
+      message: z.string().optional(),
+    }).optional())
+    .output(z.object({
+      status: z.enum(['healthy', 'degraded', 'unhealthy']),
+      timestamp: z.date(),
+      server: z.object({
+        uptime: z.number(),
+        nodeVersion: z.string(),
+        environment: z.string(),
+      }),
+      database: z.object({
+        connected: z.boolean(),
+        latency: z.number().optional(),
+        recordCount: z.number().optional(),
+      }),
+      message: z.string().optional(),
+    }))
+    .query(async ({ input }) => {
+      const startTime = Date.now();
+      const timestamp = new Date();
+      
+      // Server info
+      const server = {
+        uptime: process.uptime(),
+        nodeVersion: process.version,
+        environment: process.env.NODE_ENV || 'development',
+      };
+      
+      // Database check
+      let database: {
+        connected: boolean;
+        latency?: number;
+        recordCount?: number;
+      };
+      
+      try {
+        // Simple query to test connection
+        const queryStart = Date.now();
+        const result = await db.select({ count: count() }).from(systemHealth);
+        const latency = Date.now() - queryStart;
+        
+        database = {
+          connected: true,
+          ...(input?.includeDetails && {
+            latency,
+            recordCount: result[0]?.count || 0,
+          }),
+        };
+      } catch (error) {
+        database = {
+          connected: false,
+        };
+      }
+      
+      // Determine status
+      const status = database.connected
+        ? (database.latency && database.latency > 100 ? 'degraded' : 'healthy')
+        : 'unhealthy';
+      
+      return {
+        status,
+        timestamp,
+        server,
+        database,
+        ...(input?.message && { message: input.message }),
+      };
+    }),
+});
+```
+
+### Client-Side Usage
+
+```typescript
+// In a React component
+'use client';
+
+import { trpc } from '@/lib/trpc/react';
+
+export function HealthCheckDisplay() {
+  const { data, isLoading, error } = trpc.health.check.useQuery({
+    includeDetails: true,
+  });
+  
+  if (isLoading) return <div>Checking health...</div>;
+  if (error) return <div>Error: {error.message}</div>;
+  
+  return (
+    <div>
+      <h2>Server Health: {data.status}</h2>
+      <p>Database: {data.database.connected ? 'Connected' : 'Offline'}</p>
+      {data.database.latency && (
+        <p>Latency: {data.database.latency}ms</p>
+      )}
+    </div>
+  );
+}
+```
+
+---
+
+## Error Handling
+
+### Network Errors
+tRPC client automatically handles network errors and provides retry logic via React Query.
+
+### Validation Errors
+If input doesn't match Zod schema, tRPC throws `TRPCClientError` with validation details.
+
+### Database Errors
+Database connection failures are caught and result in `unhealthy` status (not thrown as error).
+
+### Example Error Response
+```json
+{
+  "error": {
+    "message": "Input validation failed",
+    "code": "BAD_REQUEST",
+    "data": {
+      "zodError": {
+        "fieldErrors": {
+          "message": ["String must contain at most 500 character(s)"]
+        }
+      }
+    }
+  }
+}
+```
+
+---
+
+## Performance Characteristics
+
+### Latency Targets
+- **Healthy**: <50ms database query latency
+- **Degraded**: 50-100ms database query latency
+- **Unhealthy**: >100ms or connection failure
+
+### Caching Strategy
+- No caching (health checks should be real-time)
+- React Query: `staleTime: 0`, `cacheTime: 0`
+
+### Load Considerations
+- Lightweight query (SELECT COUNT)
+- Connection pooling prevents connection overhead
+- Safe to call frequently (monitoring dashboards, etc.)
+
+---
+
+## Testing Strategy
+
+### Unit Tests
+```typescript
+// Mock database and test status logic
+describe('health.check procedure', () => {
+  it('should return healthy status when DB connected', async () => {
+    // Test implementation
+  });
+  
+  it('should return unhealthy status when DB offline', async () => {
+    // Test implementation
+  });
+});
+```
+
+### Integration Tests
+```typescript
+// Test against real database
+describe('health endpoint integration', () => {
+  it('should connect to database and return valid response', async () => {
+    const result = await caller.health.check({ includeDetails: true });
+    expect(result.status).toBe('healthy');
+    expect(result.database.connected).toBe(true);
+    expect(result.database.latency).toBeDefined();
+  });
+});
+```
+
+### E2E Tests
+```typescript
+// Playwright test
+test('health check displays on homepage', async ({ page }) => {
+  await page.goto('http://localhost:3000');
+  await expect(page.getByText(/Server Health:/)).toBeVisible();
+  await expect(page.getByText(/Database: Connected/)).toBeVisible();
+});
+```
+
+---
+
+## Security Considerations
+
+### Information Disclosure
+- ✅ No sensitive information exposed (no credentials, internal IPs, etc.)
+- ✅ Environment name revealed (acceptable for debugging)
+- ✅ Database connection status revealed (acceptable for health checks)
+
+### Rate Limiting
+- Future enhancement: Consider rate limiting if exposed publicly
+- Current: No rate limiting (internal use only in Foundation Phase)
+
+### Authentication
+- Current: Public endpoint (no auth required)
+- Future: May require API key for external monitoring services
+
+---
+
+## Constitutional Compliance
+
+### ✅ Principle II: Type Safety First
+- Input validated with Zod schema
+- Output explicitly typed
+- End-to-end type inference from server to client
+
+### ✅ Principle V: Data Integrity & Precision
+- Timestamps in ISO 8601 format (JavaScript Date serialized properly by superjson)
+- No magic strings (status enum defined)
+
+### ✅ Principle VII: Security & Compliance
+- Server-side validation enforced
+- No sensitive data exposure
+- Safe error handling (no stack traces in production)
+
+---
+
+## Future Enhancements
+
+1. **Add Response Time Histogram**: Track latency percentiles (p50, p95, p99)
+2. **Add Dependency Checks**: Verify external services (future integrations)
+3. **Add Version Information**: Include app version and build info
+4. **Add Memory Usage**: Report process memory consumption
+5. **Add Request Metrics**: Track request volume and error rates
+
+---
+
+## References
+
+- tRPC Procedures: https://trpc.io/docs/server/procedures
+- Zod Validation: https://zod.dev/
+- Health Check Pattern: https://microservices.io/patterns/observability/health-check-api.html
+- Constitutional Type Safety: `../.specify/memory/constitution.md` (Principle II)
